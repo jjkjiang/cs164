@@ -108,6 +108,15 @@ def BPDU_check(root, isRoot, dist, senderIP, senderID, newDist, newRoot):
 	#root with smaller ID
 	#root with equal ID, shorter distance
 	#equal both, but sender has smaller ID
+
+	print "root is " + str(root)
+	print "am i root " + str(isRoot)
+	print "dist is " + str(dist)
+	print "senderIP " + str(senderIP)
+	print "senderID " + str(senderID)
+	print "newDist " + str(newDist)
+	print "newRoot " + str(newRoot)
+	
 	if newRoot < root or (newRoot == root and (newDist + 1) < dist) or (newRoot == root and (newDist + 1) == dist and senderID < MAC):
 		isRoot = False
 		root = newRoot
@@ -129,10 +138,17 @@ def BPDU_check(root, isRoot, dist, senderIP, senderID, newDist, newRoot):
 def clientthread(conn, clientip, clientport): 
 	# todo: add to ports
 	iter = 0
+	global root, isRoot, dist
+	print root
 
 	while 1:
-		data = conn.recv(4096).replace(" ",",").split(",")
+		data = conn.recv(4096).rstrip().split(" ")
+		if data == ['']:
+			print "closing"
+			conn.close()
+			break
 		if iter == 0:
+			# find
 			for list in PORTS:
 				destport = lookup_route(clientip)
 				if list[0] == destport:
@@ -140,7 +156,23 @@ def clientthread(conn, clientip, clientport):
 					break
 		
 		if data[0] == '1': #BPDU
+			print "BPDU RECEIVED"
 			if BPDU_check(root, isRoot, dist, clientip, long(data[1]), long(data[2]), long(data[3])): #smaller found
+				isRoot = False
+				root = long(data[3])
+				dist = long(data[2]) + 1
+				
+				print str(isRoot)
+				print str(root)
+				print str(dist)
+				
+				for list in PORTS:
+					destport = lookup_route(clientip)
+					if list[0] == destport:
+						list[2] = 'RP'
+					else:
+						list[2] = 'BP'				
+
 				#forward to all other ports
 				for i in range(1,5):
 					if i == int(HOST.split('.')[3]):
@@ -151,20 +183,23 @@ def clientthread(conn, clientip, clientport):
 							senderSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 							senderSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
 							senderSock.connect(('10.0.0.' + str(i), 8000 + destport))
-							senderSock.send("1," + str(MAC) + "," + str(dist) + "," + str(root))
+							testmsg = "1 " + str(MAC) + " " + str(dist) + " " + str(root)
+							print repr(testmsg)
+							senderSock.send("1 " + str(MAC) + " " + str(dist) + " " + str(root))
 							sleep(3)
 							senderSock.close()
 						except:
 							print("failed on " + str(i))
 							continue
+					print PORTS
 		elif data[0].rstrip() == "printports":
 			print PORTS
 			print "printing"
 		elif data[0].rstrip() == "!q":
 			break
-		else:
-			print data[0]
-			print type(data[0])
+		#else:
+			#print data[0]
+			#print type(data[0])
 		iter = iter+1
 		print iter
 	sleep(1)
@@ -182,8 +217,29 @@ def listenthread(s):
 	s.close()
 
 def sendthread():
-	#send stuff from here
-	print('lol')
+	global MAC, dist, root, isRoot
+	print "lol"
+	print str(isRoot)
+	while isRoot:
+		for i in range(1,5):
+			print str(i)
+			if i == int(HOST.split('.')[3]):
+				continue
+			else:
+				try:
+					destport = lookup_route('10.0.0.' + str(i))
+					print str(destport)
+					senderSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+					senderSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
+					senderSock.connect(('10.0.0.' + str(i), 8000 + destport))
+					msg = "1 " + str(MAC) + " " + str(dist) + " " + str(root)
+					senderSock.send(msg)
+					sleep(3)
+					senderSock.close()
+				except:
+					print("failed on " + str(i))
+			sleep(20)
+
 
 start_new_thread(listenthread, (s1,))
 start_new_thread(listenthread, (s2,))
